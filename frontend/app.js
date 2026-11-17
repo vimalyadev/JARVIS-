@@ -6,8 +6,8 @@ const WAKE_WORDS = ["jarvis", "hey jarvis", "ok jarvis"];
 let isListening = false;
 let recognition = null;
 let rotationAngle = 0;
-let pulseIntensity = 1;
 let isSpeaking = false;
+let audioUnlocked = false;
 
 // Elements
 const reactorCanvas = document.getElementById("reactorCanvas");
@@ -23,14 +23,39 @@ const ramStat = document.getElementById("ramStat");
 const batteryStat = document.getElementById("batteryStat");
 const osStat = document.getElementById("osStat");
 
-// Audio Context for sound effects
+// ----------------------------------------------------------
+// Audio Unlock - MUST happen on first user interaction
+// ----------------------------------------------------------
 let audioCtx = null;
-function playChime(freq = 587.33, type = "sine") {
+function unlockAudio() {
+  if (audioUnlocked) return;
+  try {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    // Play a silent buffer to unlock audio playback
+    const buffer = audioCtx.createBuffer(1, 1, 22050);
+    const source = audioCtx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(audioCtx.destination);
+    source.start(0);
+    audioUnlocked = true;
+    console.log("[Audio] Playback unlocked");
+  } catch (e) {
+    console.warn("[Audio] Unlock failed:", e);
+  }
+}
+
+// Unlock audio on ANY user interaction
+document.addEventListener("click", unlockAudio, { once: false });
+document.addEventListener("touchstart", unlockAudio, { once: false });
+document.addEventListener("keydown", unlockAudio, { once: false });
+
+function playChime(freq = 587.33) {
   try {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === "suspended") audioCtx.resume();
     const osc = audioCtx.createOscillator();
     const gain = audioCtx.createGain();
-    osc.type = type;
+    osc.type = "sine";
     osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
     gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
@@ -39,7 +64,7 @@ function playChime(freq = 587.33, type = "sine") {
     osc.start();
     osc.stop(audioCtx.currentTime + 0.4);
   } catch (e) {
-    console.warn("Audio chime error:", e);
+    console.warn("Chime error:", e);
   }
 }
 
@@ -57,7 +82,6 @@ function drawArcReactor() {
   rotationAngle += isListening ? 0.04 : 0.01;
   const currentPulse = isSpeaking ? 1 + Math.sin(Date.now() / 100) * 0.15 : (isListening ? 1 + Math.sin(Date.now() / 250) * 0.08 : 1);
 
-  // Outer segmented ring
   ctx.save();
   ctx.translate(cx, cy);
   ctx.rotate(rotationAngle);
@@ -69,7 +93,6 @@ function drawArcReactor() {
   ctx.stroke();
   ctx.restore();
 
-  // Inner counter-rotating ring
   ctx.save();
   ctx.translate(cx, cy);
   ctx.rotate(-rotationAngle * 1.5);
@@ -81,7 +104,6 @@ function drawArcReactor() {
   ctx.stroke();
   ctx.restore();
 
-  // Core Glowing Circle
   const gradient = ctx.createRadialGradient(cx, cy, 10, cx, cy, 55 * currentPulse);
   gradient.addColorStop(0, isSpeaking ? "#ffffff" : "#b3f0ff");
   gradient.addColorStop(0.4, isListening ? "#00ffff" : "#00d2ff");
@@ -92,7 +114,6 @@ function drawArcReactor() {
   ctx.arc(cx, cy, 50 * currentPulse, 0, Math.PI * 2);
   ctx.fill();
 
-  // Central crossbars
   ctx.save();
   ctx.translate(cx, cy);
   ctx.rotate(rotationAngle * 0.5);
@@ -122,15 +143,85 @@ function appendMessage(sender, text) {
   transcript.scrollTop = transcript.scrollHeight;
 }
 
+// Small debug label showing what mic heard (shows below wake status)
+function showHeard(text) {
+  const heardEl = document.getElementById("heardDebug");
+  if (heardEl) {
+    heardEl.innerText = `🎤 Heard: "${text}"`;
+    heardEl.style.opacity = "1";
+    setTimeout(() => { heardEl.style.opacity = "0.4"; }, 2000);
+  }
+}
+
 // ----------------------------------------------------------
-// Voice Synthesis (TTS)
+// Voice Synthesis (TTS) - FIXED for browser autoplay
 // ----------------------------------------------------------
+function speakWithBrowser(text) {
+  return new Promise((resolve) => {
+    if (!("speechSynthesis" in window)) {
+      console.warn("[TTS] Browser speechSynthesis not available");
+      resolve();
+      return;
+    }
+
+    // Cancel any ongoing speech
+    window.speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 1.0;
+    utterance.pitch = 0.9;
+    utterance.volume = 1.0;
+    utterance.lang = "en-GB";
+
+    // Try to pick a good English voice
+    const voices = window.speechSynthesis.getVoices();
+    const preferred = voices.find(v =>
+      v.name.toLowerCase().includes("google uk english male") ||
+      v.name.toLowerCase().includes("daniel") ||
+      v.name.toLowerCase().includes("ryan") ||
+      v.name.toLowerCase().includes("english") && v.lang.startsWith("en")
+    );
+    if (preferred) {
+      utterance.voice = preferred;
+    } else if (voices.length > 0) {
+      // Find any English voice
+      const enVoice = voices.find(v => v.lang.startsWith("en"));
+      if (enVoice) utterance.voice = enVoice;
+    }
+
+    utterance.onend = () => {
+      isSpeaking = false;
+      reactorLabel.innerText = isListening ? "LISTENING" : "STANDBY";
+      resolve();
+    };
+    utterance.onerror = (e) => {
+      console.warn("[TTS] Speech error:", e);
+      isSpeaking = false;
+      reactorLabel.innerText = isListening ? "LISTENING" : "STANDBY";
+      resolve();
+    };
+
+    isSpeaking = true;
+    reactorLabel.innerText = "SPEAKING";
+    window.speechSynthesis.speak(utterance);
+
+    // Safety timeout - if speech doesn't end in 15 seconds, resolve anyway
+    setTimeout(() => {
+      if (isSpeaking) {
+        isSpeaking = false;
+        reactorLabel.innerText = isListening ? "LISTENING" : "STANDBY";
+        resolve();
+      }
+    }, 15000);
+  });
+}
+
 async function vocalizeResponse(text) {
   isSpeaking = true;
   reactorLabel.innerText = "SPEAKING";
 
+  // METHOD 1: Try server-side Edge neural TTS (sounds best)
   try {
-    // Try streaming neural Edge-TTS from backend
     const res = await fetch("/api/tts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -139,34 +230,40 @@ async function vocalizeResponse(text) {
 
     if (res.ok) {
       const blob = await res.blob();
-      const audioUrl = URL.createObjectURL(blob);
-      const audio = new Audio(audioUrl);
-      audio.onended = () => {
-        isSpeaking = false;
-        reactorLabel.innerText = isListening ? "LISTENING" : "STANDBY";
-      };
-      await audio.play();
-      return;
+      if (blob.size > 0) {
+        const audioUrl = URL.createObjectURL(blob);
+        const audio = new Audio(audioUrl);
+        audio.volume = 1.0;
+
+        await new Promise((resolve) => {
+          audio.onended = () => {
+            isSpeaking = false;
+            reactorLabel.innerText = isListening ? "LISTENING" : "STANDBY";
+            URL.revokeObjectURL(audioUrl);
+            resolve();
+          };
+          audio.onerror = (err) => {
+            console.warn("[TTS Audio] Playback error, falling back to browser voice:", err);
+            URL.revokeObjectURL(audioUrl);
+            resolve();
+          };
+          audio.play().catch((playErr) => {
+            console.warn("[TTS Audio] Autoplay blocked, using browser voice:", playErr);
+            resolve();
+          });
+        });
+
+        // If audio played successfully, we're done
+        if (!isSpeaking) return;
+      }
     }
   } catch (err) {
-    console.warn("Backend TTS stream fallback to browser voice:", err);
+    console.warn("[TTS] Server TTS failed:", err);
   }
 
-  // Browser speech synthesis fallback
-  if ("speechSynthesis" in window) {
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1.0;
-    utterance.pitch = 0.95;
-    utterance.onend = () => {
-      isSpeaking = false;
-      reactorLabel.innerText = isListening ? "LISTENING" : "STANDBY";
-    };
-    window.speechSynthesis.speak(utterance);
-  } else {
-    isSpeaking = false;
-    reactorLabel.innerText = isListening ? "LISTENING" : "STANDBY";
-  }
+  // METHOD 2: Browser built-in speech synthesis (always works, no network needed)
+  console.log("[TTS] Using browser speechSynthesis fallback");
+  await speakWithBrowser(text);
 }
 
 // ----------------------------------------------------------
@@ -179,6 +276,11 @@ async function executeCommand(cmdText) {
   commandInput.value = "";
   reactorLabel.innerText = "PROCESSING";
 
+  // Pause recognition while processing to avoid hearing Jarvis's own voice
+  if (recognition && isListening) {
+    try { recognition.stop(); } catch (e) {}
+  }
+
   try {
     const res = await fetch("/api/command", {
       method: "POST",
@@ -188,16 +290,22 @@ async function executeCommand(cmdText) {
 
     const data = await res.json();
     appendMessage("Jarvis", data.response);
-    vocalizeResponse(data.response);
+    await vocalizeResponse(data.response);
     if (data.status) updateTelemetry(data.status);
   } catch (err) {
     const errorMsg = "Apologies Sir, I encountered difficulty processing that request.";
     appendMessage("Jarvis", errorMsg);
-    vocalizeResponse(errorMsg);
+    await speakWithBrowser(errorMsg);
+  }
+
+  // Resume listening after speaking
+  if (isListening) {
+    try { recognition.start(); } catch (e) {}
   }
 }
 
 function executeQuick(text) {
+  unlockAudio();
   executeCommand(text);
 }
 
@@ -207,15 +315,16 @@ function executeQuick(text) {
 function setupSpeechRecognition() {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognition) {
-    wakeStatus.innerText = "Speech Recognition not natively supported in this browser. Use manual input.";
+    wakeStatus.innerText = "Voice not supported in this browser. Use Chrome for voice commands, or type below.";
     micToggleBtn.disabled = true;
     return;
   }
 
   recognition = new SpeechRecognition();
   recognition.continuous = true;
-  recognition.interimResults = false;
+  recognition.interimResults = true;  // Show what's being heard in real-time
   recognition.lang = "en-US";
+  recognition.maxAlternatives = 3;    // Check multiple interpretations
 
   recognition.onstart = () => {
     isListening = true;
@@ -227,14 +336,14 @@ function setupSpeechRecognition() {
   };
 
   recognition.onend = () => {
-    // If user intended auto-listening, automatically restart it (always listening mode)
-    if (isListening) {
-      try {
-        recognition.start();
-      } catch (e) {
-        // Ignored if already started
-      }
-    } else {
+    if (isListening && !isSpeaking) {
+      // Auto-restart when it times out (browser stops after ~5s silence)
+      setTimeout(() => {
+        if (isListening && !isSpeaking) {
+          try { recognition.start(); } catch (e) {}
+        }
+      }, 300);
+    } else if (!isListening) {
       reactorLabel.innerText = "STANDBY";
       wakeStatus.className = "wake-status";
       wakeStatus.innerHTML = `Say <strong style="color:var(--accent-cyan);">"JARVIS"</strong> or tap the core to speak`;
@@ -244,28 +353,74 @@ function setupSpeechRecognition() {
   };
 
   recognition.onresult = (event) => {
-    const lastResultIndex = event.results.length - 1;
-    const transcriptText = event.results[lastResultIndex][0].transcript.trim().toLowerCase();
-    console.log("Transcribed speech:", transcriptText);
+    // Get the latest final or interim result
+    let finalTranscript = "";
+    let interimTranscript = "";
 
-    // Detect wake word
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const result = event.results[i];
+      const text = result[0].transcript.trim().toLowerCase();
+
+      if (result.isFinal) {
+        finalTranscript = text;
+      } else {
+        interimTranscript = text;
+      }
+    }
+
+    // Show what's being heard in real-time
+    if (interimTranscript) {
+      showHeard(interimTranscript);
+    }
+
+    // Only process final results to avoid duplicate triggers
+    if (!finalTranscript) return;
+
+    showHeard(finalTranscript);
+    console.log("[Speech Final]:", finalTranscript);
+
+    // Check ALL alternative transcriptions for the wake word
     let matched = false;
-    let cleanCommand = transcriptText;
+    let cleanCommand = "";
 
-    for (const ww of WAKE_WORDS) {
-      if (transcriptText.includes(ww)) {
-        matched = true;
-        playChime(880); // Activation sound
-        const idx = transcriptText.indexOf(ww);
-        cleanCommand = transcriptText.substring(idx + ww.length).trim();
-        break;
+    // Check primary and alternative results
+    const lastResult = event.results[event.results.length - 1];
+    for (let alt = 0; alt < lastResult.length; alt++) {
+      const altText = lastResult[alt].transcript.trim().toLowerCase();
+
+      for (const ww of WAKE_WORDS) {
+        if (altText.includes(ww)) {
+          matched = true;
+          const idx = altText.indexOf(ww);
+          cleanCommand = altText.substring(idx + ww.length).trim();
+          // Remove leading punctuation or filler
+          cleanCommand = cleanCommand.replace(/^[,.\s]+/, "").trim();
+          break;
+        }
+      }
+      if (matched) break;
+    }
+
+    // Also check for common misheard variants of "Jarvis"
+    if (!matched) {
+      const misheardVariants = ["jarvis", "jarves", "jarvus", "jarwis", "javis", "jarby", "job is", "service"];
+      for (const variant of misheardVariants) {
+        if (finalTranscript.includes(variant)) {
+          matched = true;
+          const idx = finalTranscript.indexOf(variant);
+          cleanCommand = finalTranscript.substring(idx + variant.length).trim();
+          cleanCommand = cleanCommand.replace(/^[,.\s]+/, "").trim();
+          break;
+        }
       }
     }
 
     if (matched) {
-      if (cleanCommand.length > 0) {
+      playChime(880);
+      if (cleanCommand.length > 1) {
         executeCommand(cleanCommand);
       } else {
+        // Just said "Jarvis" with no command - acknowledge and wait
         appendMessage("Jarvis", "Yes, Sir? How may I assist you?");
         vocalizeResponse("Yes, Sir?");
       }
@@ -273,28 +428,32 @@ function setupSpeechRecognition() {
   };
 
   recognition.onerror = (event) => {
-    console.warn("Speech recognition error:", event.error);
+    console.warn("[Speech Error]:", event.error);
     if (event.error === "not-allowed") {
       isListening = false;
-      wakeStatus.innerText = "Microphone access blocked. Please allow mic permissions in browser settings.";
+      wakeStatus.innerHTML = `<span style="color:#ff3366;">⚠️ Microphone blocked!</span> Click the lock icon 🔒 in the address bar → Allow Microphone`;
+    } else if (event.error === "no-speech") {
+      // Normal - just means silence, will auto-restart
+    } else if (event.error === "aborted") {
+      // We stopped it on purpose
     }
   };
 }
 
 function toggleListening() {
+  unlockAudio();
+
   if (!recognition) setupSpeechRecognition();
   if (!recognition) return;
 
   if (isListening) {
     isListening = false;
-    recognition.stop();
+    try { recognition.stop(); } catch (e) {}
   } else {
     isListening = true;
     playChime(440);
-    try {
-      recognition.start();
-    } catch (e) {
-      console.warn("Recognition already active", e);
+    try { recognition.start(); } catch (e) {
+      console.warn("Recognition start error:", e);
     }
   }
 }
@@ -316,17 +475,26 @@ async function fetchStatus() {
       const data = await res.json();
       updateTelemetry(data);
     }
-  } catch (e) {
-    // Backend offline or reconnecting
-  }
+  } catch (e) {}
+}
+
+// ----------------------------------------------------------
+// Preload voices (Chrome loads them asynchronously)
+// ----------------------------------------------------------
+if ("speechSynthesis" in window) {
+  speechSynthesis.getVoices(); // Trigger voice loading
+  speechSynthesis.onvoiceschanged = () => {
+    const voices = speechSynthesis.getVoices();
+    console.log(`[TTS] ${voices.length} voices available`);
+  };
 }
 
 // ----------------------------------------------------------
 // Event Listeners
 // ----------------------------------------------------------
-sendBtn.addEventListener("click", () => executeCommand(commandInput.value));
+sendBtn.addEventListener("click", () => { unlockAudio(); executeCommand(commandInput.value); });
 commandInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") executeCommand(commandInput.value);
+  if (e.key === "Enter") { unlockAudio(); executeCommand(commandInput.value); }
 });
 document.getElementById("reactorButton").addEventListener("click", toggleListening);
 micToggleBtn.addEventListener("click", toggleListening);
