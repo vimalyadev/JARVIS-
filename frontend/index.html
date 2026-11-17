@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>J.A.R.V.I.S. - Personal AI Assistant</title>
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#00d2ff">
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2245%22 fill=%22%23040814%22 stroke=%22%2300d2ff%22 stroke-width=%228%22/><circle cx=%2250%22 cy=%2250%22 r=%2220%22 fill=%22%2300d2ff%22/></svg>">
+</head>
+<body>
+  <header>
+    <div class="logo-area">
+      <span class="hud-pill">Mark VII</span>
+      <h1>J.A.R.V.I.S.</h1>
+    </div>
+    <div class="header-status">
+      <span class="status-dot" id="statusDot"></span>
+      <span id="connectionLabel" style="font-size: 0.85rem; color: var(--text-dim);">ONLINE</span>
+    </div>
+  </header>
+
+  <main>
+    <!-- Arc Reactor Visualization & Wake-Word Section -->
+    <section class="arc-section">
+      <div class="reactor-container" id="reactorButton" title="Tap to Toggle Hands-Free Listening">
+        <canvas id="reactorCanvas" width="240" height="240"></canvas>
+        <div class="reactor-label" id="reactorLabel">STANDBY</div>
+      </div>
+      <div class="wake-status" id="wakeStatus">
+        Say <strong style="color:var(--accent-cyan);">"JARVIS"</strong> or tap the core to speak
+      </div>
+    </section>
+
+    <!-- Telemetry Status Grid -->
+    <section class="telemetry-grid">
+      <div class="telemetry-card">
+        <div class="card-title">CPU Load</div>
+        <div class="card-value" id="cpuStat">--%</div>
+      </div>
+      <div class="telemetry-card">
+        <div class="card-title">Memory</div>
+        <div class="card-value" id="ramStat">--%</div>
+      </div>
+      <div class="telemetry-card">
+        <div class="card-title">Power</div>
+        <div class="card-value" id="batteryStat">--%</div>
+      </div>
+      <div class="telemetry-card">
+        <div class="card-title">System</div>
+        <div class="card-value" id="osStat" style="font-size:0.95rem;">Ready</div>
+      </div>
+    </section>
+
+    <!-- Conversation & Input Panel -->
+    <section class="interaction-panel">
+      <div class="transcript-box" id="transcript">
+        <div class="message jarvis">
+          Good day, Sir. All systems are initialized and standing by. Say "Jarvis" or tap the Arc Reactor to begin.
+        </div>
+      </div>
+
+      <!-- Quick Action Chips -->
+      <div class="quick-chips">
+        <div class="chip" onclick="executeQuick('System status report')">Diagnostics</div>
+        <div class="chip" onclick="executeQuick('What time is it?')">Current Time</div>
+        <div class="chip" onclick="executeQuick('Weather forecast')">Weather</div>
+        <div class="chip" onclick="executeQuick('Open YouTube')">YouTube</div>
+        <div class="chip" onclick="executeQuick('Volume up')">Volume +</div>
+        <div class="chip" onclick="executeQuick('Who are you?')">Identity</div>
+      </div>
+
+      <!-- Manual Input -->
+      <div class="input-group">
+        <input type="text" id="commandInput" placeholder="Give an instruction to Jarvis..." autocomplete="off">
+        <button id="sendBtn">Send</button>
+        <button id="micToggleBtn" title="Toggle Continuous Wake-Word Detection">🎙️ Auto-Listen</button>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    J.A.R.V.I.S. Personal AI System &bull; Active on Mobile & Workstation
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+{
+  "name": "J.A.R.V.I.S. Personal AI",
+  "short_name": "JARVIS",
+  "description": "Always-listening personal AI assistant for laptop and mobile",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#050811",
+  "theme_color": "#00d2ff",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='45' fill='%23050811' stroke='%2300d2ff' stroke-width='4'/%3E%3Ccircle cx='50' cy='50' r='25' fill='%2300d2ff'/%3E%3C/svg%3E",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='45' fill='%23050811' stroke='%2300d2ff' stroke-width='4'/%3E%3Ccircle cx='50' cy='50' r='25' fill='%2300d2ff'/%3E%3C/svg%3E",
+      "sizes": "512x512",
+      "type": "image/svg+xml"
+    }
+  ]
+}
